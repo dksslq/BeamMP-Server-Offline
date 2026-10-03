@@ -15,7 +15,7 @@ BeamMP 官方服务端（BeamMP/BeamMP-Server）的**纯离线版**分支：
 
 | 文件 | 离线改动 |
 |---|---|
-| `src/TNetwork.cpp` `TNetwork::Authentication()` | 无 backend 验证；身份包 = 玩家昵称（sanitize ≤32B）；空名 → Guest；onPlayerAuth 事件保留 |
+| `src/TNetwork.cpp` `TNetwork::Authentication()` | 无 backend 验证；身份包 = 玩家昵称（sanitize ≤32B）；空名 → Guest；≥40 位纯 hex（官方 Launcher 的公钥）→ 命名 `Player-<hex前6位>`（上游客户端兼容）；onPlayerAuth 事件保留 |
 | `src/THeartbeatThread.cpp` `operator()` | 心跳线程只本地刷新 `lastCall`（每 5s），零网络请求 |
 | `src/Common.cpp` `Application::CheckForUpdates()` | 空操作 |
 | `src/TConsole.cpp` `Command_NetTest()` | 打印本地状态，不请求 Server Check API |
@@ -35,6 +35,13 @@ git merge upstream/minor      # 上游默认分支是 minor
 2. 上表中的离线语义必须保留；上游重写同区域时，把离线语义重新套到新实现上；
 3. 合并后自检：`grep -rn "backend.beammp.com\|GetBackendUrlForAuth" src/` 只应出现在注释里；
    ServerConfig.toml 模板不要求 AuthKey；CI 绿灯。
+
+## 官方客户端兼容（语义要点）
+
+官方 Launcher/mod（联网状态）可直接 Direct Connect 加入本服务器：
+握手协议未变；官方客户端发来的"身份包"是账号公钥（≥40 位纯 hex），服务器识别后
+自动命名 `Player-<前6位>`。无互联网的官方客户端过不了官方登录流程，只能改用
+本项目离线 Launcher（这正是本项目的意义）。
 
 ## 构建
 

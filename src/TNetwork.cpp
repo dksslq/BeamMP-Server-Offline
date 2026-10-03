@@ -30,6 +30,7 @@
 #include <Http.h>
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/address_v4.hpp>
@@ -437,6 +438,11 @@ std::shared_ptr<TClient> TNetwork::Authentication(TConnection&& RawConnection) {
     // In offline mode the client (BeamMP-Offline-Launcher) sends the player's
     // chosen name in place of the public key. An empty/missing name falls back
     // to "Guest", which is still governed by the AllowGuests setting.
+    //
+    // Upstream-client compatibility: an unmodified (official) BeamMP launcher
+    // sends its account PUBLIC KEY here instead of a name. Public keys are
+    // long hex strings; detect that case so official clients can still join
+    // offline servers, with a readable auto-generated name.
     if (Data.size() > 64) {
         ClientKick(*Client, "Name packet too long!");
         return nullptr;
@@ -447,6 +453,19 @@ std::shared_ptr<TClient> TNetwork::Authentication(TConnection&& RawConnection) {
     PlayerName.erase(std::remove_if(PlayerName.begin(), PlayerName.end(),
                          [](unsigned char c) { return c < 0x20 || c == 0x7F; }),
         PlayerName.end());
+
+    const bool LooksLikePublicKey = PlayerName.size() >= 40
+        && PlayerName.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
+    if (LooksLikePublicKey) {
+        // official (upstream) client joining an offline server:
+        // assign a stable readable name derived from the key
+        std::string KeyPrefix = PlayerName.substr(0, 6);
+        std::transform(KeyPrefix.begin(), KeyPrefix.end(), KeyPrefix.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        PlayerName = "Player-" + KeyPrefix;
+        beammp_info("Client appears to be an upstream (official) launcher sending a public key; assigning readable name");
+    }
+
     if (PlayerName.size() > 32) {
         PlayerName.resize(32);
     }
