@@ -302,7 +302,6 @@ void TConsole::Command_NetTest(const std::string& cmd, const std::vector<std::st
     beammp_infof("This server is listening on {}:{} (local network direct connect only)",
         Application::Settings.getAsString(Settings::Key::General_IP),
         Application::Settings.getAsInt(Settings::Key::General_Port));
-    beammp_infof("Connected players: {}", mServer.ClientCount());
 }
 
 void TConsole::Command_Kick(const std::string&, const std::vector<std::string>& args) {
