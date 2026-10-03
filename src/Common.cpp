@@ -211,43 +211,11 @@ TEST_CASE("Application::SetSubsystemStatus") {
 }
 
 void Application::CheckForUpdates() {
-    Application::SetSubsystemStatus("UpdateCheck", Application::Status::Starting);
-    static bool FirstTime = true;
-    // checks current version against latest version
-    std::regex VersionRegex { R"(\d+\.\d+\.\d+\n*)" };
-    for (const auto& url : GetBackendUrlsInOrder()) {
-        auto Response = Http::GET(url + "/v/s");
-        bool Matches = std::regex_match(Response, VersionRegex);
-        if (Matches) {
-            auto MyVersion = ServerVersion();
-            auto RemoteVersion = Version(VersionStrToInts(Response));
-            if (IsOutdated(MyVersion, RemoteVersion)) {
-                std::string RealVersionString = std::string("v") + RemoteVersion.AsString();
-                const std::string DefaultUpdateMsg = "NEW VERSION IS OUT! Please update to the new version ({}) of the BeamMP-Server! Download it here: https://beammp.com/! For a guide on how to update, visit: https://docs.beammp.com/server/server-maintenance/#updating-the-server";
-                auto UpdateMsg = Env::Get(Env::Key::PROVIDER_UPDATE_MESSAGE).value_or(DefaultUpdateMsg);
-                UpdateMsg = fmt::vformat(std::string_view(UpdateMsg), fmt::make_format_args(RealVersionString));
-                beammp_warnf("{}{}{}", ANSI_YELLOW_BOLD, UpdateMsg, ANSI_RESET);
-            } else {
-                if (FirstTime) {
-                    beammp_info("Server up-to-date!");
-                }
-            }
-            Application::SetSubsystemStatus("UpdateCheck", Application::Status::Good);
-            break;
-        } else {
-            if (FirstTime) {
-                beammp_debug("Failed to fetch version from: " + url);
-                beammp_trace("got " + Response);
-                Application::SetSubsystemStatus("UpdateCheck", Application::Status::Bad);
-            }
-        }
-    }
-    if (Application::GetSubsystemStatuses().at("UpdateCheck") == Application::Status::Bad) {
-        if (FirstTime) {
-            beammp_warn("Unable to fetch version info from backend.");
-        }
-    }
-    FirstTime = false;
+    // === OFFLINE MODE (BeamMP-Offline) ===
+    // Update checking required the BeamMP backend. Offline builds never talk
+    // to the network, so this is a no-op. Update by merging upstream into this
+    // repository, see UPSTREAM-SYNC.md / CONTEXT.md in the repo root.
+    Application::SetSubsystemStatus("UpdateCheck", Application::Status::Good);
 }
 
 // thread name stuff

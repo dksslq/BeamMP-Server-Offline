@@ -3,6 +3,7 @@ name: Windows
 on:
   push:
     branches:
+      - 'main'
       - 'develop'
       - 'minor'
   pull_request:

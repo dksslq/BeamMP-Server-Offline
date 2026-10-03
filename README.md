@@ -1,3 +1,15 @@
+# BeamMP-Server-Offline
+
+> **离线版说明**：这是 [BeamMP/BeamMP-Server](https://github.com/BeamMP/BeamMP-Server) 的纯离线分支。
+> **无需 AuthKey（keymaster）、不验证玩家 key、不向任何 backend 发送心跳** ——
+> 专为内网/无互联网环境打造的自由私服。玩家昵称由离线启动器直接提供。
+>
+> - 🧠 **项目完整记忆**：[CONTEXT.md](./CONTEXT.md)（改动清单 + 上游合并手册，必读）
+> - 配套仓库：[BeamMP-Offline](https://github.com/dksslq/BeamMP-Offline)（主仓库/客户端 mod） ·
+>   [BeamMP-Launcher-Offline](https://github.com/dksslq/BeamMP-Launcher-Offline)
+>
+> 以下为上游原版 README 内容。
+
 # BeamMP-Server
 
 [![CMake Windows Build](https://github.com/BeamMP/BeamMP-Server/workflows/CMake%20Windows%20Build/badge.svg?branch=master)](https://github.com/BeamMP/BeamMP-Server/actions?query=workflow%3A%22CMake+Windows+Build%22)

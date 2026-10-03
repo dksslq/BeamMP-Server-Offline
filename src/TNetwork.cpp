@@ -28,6 +28,7 @@
 #include "nlohmann/json.hpp"
 #include <CustomAssert.h>
 #include <Http.h>
+#include <algorithm>
 #include <array>
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/ip/address.hpp>
@@ -431,68 +432,33 @@ std::shared_ptr<TClient> TNetwork::Authentication(TConnection&& RawConnection) {
         return nullptr;
     }
 
-    if (Data.size() > 50) {
-        ClientKick(*Client, "Invalid Key (too long)!");
+    // === OFFLINE MODE (BeamMP-Offline) ===
+    // The key packet is no longer verified against any authentication backend.
+    // In offline mode the client (BeamMP-Offline-Launcher) sends the player's
+    // chosen name in place of the public key. An empty/missing name falls back
+    // to "Guest", which is still governed by the AllowGuests setting.
+    if (Data.size() > 64) {
+        ClientKick(*Client, "Name packet too long!");
         return nullptr;
     }
 
-    std::string Key(reinterpret_cast<const char*>(Data.data()), Data.size());
-    if (Key.empty()) {
-        ClientKick(*Client, "Invalid Key (empty)!");
-        return nullptr;
+    std::string PlayerName { reinterpret_cast<const char*>(Data.data()), Data.size() };
+    // sanitize: strip non-printable characters, cap length
+    PlayerName.erase(std::remove_if(PlayerName.begin(), PlayerName.end(),
+                         [](unsigned char c) { return c < 0x20 || c == 0x7F; }),
+        PlayerName.end());
+    if (PlayerName.size() > 32) {
+        PlayerName.resize(32);
     }
-    std::string AuthKey = Application::Settings.getAsString(Settings::Key::General_AuthKey);
-    std::string ClientIp = Client->GetIdentifiers().at("ip");
-
-    nlohmann::json AuthReq { };
-    std::string AuthResStr { };
-    try {
-        AuthReq = nlohmann::json {
-            { "key", Key },
-            { "auth_key", AuthKey },
-            { "client_ip", ClientIp }
-        };
-
-        auto Target = "/pkToUser";
-
-        unsigned int ResponseCode = 0;
-        AuthResStr = Http::POST(Application::GetBackendUrlForAuth() + Target, AuthReq.dump(), "application/json", &ResponseCode);
-
-    } catch (const std::exception& e) {
-        beammp_debugf("Invalid json sent by client, kicking: {}", e.what());
-        ClientKick(*Client, "Invalid Key (invalid UTF8 string)!");
-        return nullptr;
+    bool IsGuest = PlayerName.empty();
+    if (IsGuest) {
+        PlayerName = "Guest";
     }
 
-    beammp_debug("Response from authentication backend: " + AuthResStr);
-
-    try {
-        nlohmann::json AuthRes = nlohmann::json::parse(AuthResStr);
-
-        if (AuthRes["username"].is_string() && AuthRes["username"].size() > 0 && AuthRes["roles"].is_string()
-            && AuthRes["guest"].is_boolean() && AuthRes["identifiers"].is_array()) {
-
-            Client->SetName(AuthRes["username"]);
-            Client->SetRoles(AuthRes["roles"]);
-            Client->SetIsGuest(AuthRes["guest"]);
-            for (const auto& ID : AuthRes["identifiers"]) {
-                auto Raw = std::string(ID);
-                auto SepIndex = Raw.find(':');
-                Client->SetIdentifier(Raw.substr(0, SepIndex), Raw.substr(SepIndex + 1));
-            }
-        } else {
-            beammp_error("Invalid authentication data received from authentication backend");
-            ClientKick(*Client, "Invalid authentication data!");
-            return nullptr;
-        }
-    } catch (const std::exception& e) {
-        beammp_errorf("Client sent invalid key. Error was: {}", e.what());
-        // TODO: we should really clarify that this was a backend response or parsing error
-        ClientKick(*Client, "Invalid key! Please restart your game.");
-        return nullptr;
-    }
-
-    beammp_debug("Name -> " + Client->GetName() + ", Guest -> " + std::to_string(Client->IsGuest()) + ", Roles -> " + Client->GetRoles());
+    Client->SetName(PlayerName);
+    Client->SetRoles("USER");
+    Client->SetIsGuest(IsGuest);
+    beammp_info("Offline identification: name -> " + Client->GetName() + ", guest -> " + std::to_string(Client->IsGuest()));
     mServer.ForEachClient([&](const std::weak_ptr<TClient>& ClientPtr) -> bool {
         std::shared_ptr<TClient> Cl;
         {

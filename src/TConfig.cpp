@@ -131,7 +131,7 @@ void TConfig::FlushToFile() {
     // auto data = toml::parse<toml::preserve_comments>(mConfigFileName);
     auto data = toml::value {};
     data["General"][StrAuthKey.data()] = Application::Settings.getAsString(Settings::Key::General_AuthKey);
-    SetComment(data["General"][StrAuthKey.data()].comments(), " AuthKey has to be filled out in order to run the server");
+    SetComment(data["General"][StrAuthKey.data()].comments(), " Unused in the offline edition: no backend authentication is performed");
     data["General"][StrLogChat.data()] = Application::Settings.getAsBool(Settings::Key::General_LogChat);
     SetComment(data["General"][StrLogChat.data()].comments(), " Whether to log chat messages in the console / log");
     data["General"][StrDebug.data()] = Application::Settings.getAsBool(Settings::Key::General_Debug);
@@ -159,9 +159,10 @@ void TConfig::FlushToFile() {
     data["Misc"][StrUpdateReminderTime.data()] = Application::Settings.getAsString(Settings::Key::Misc_UpdateReminderTime);
     SetComment(data["Misc"][StrUpdateReminderTime.data()].comments(), " Specifies the time between update reminders. You can use any of \"s, min, h, d\" at the end to specify the units seconds, minutes, hours or days. So 30d or 0.5min will print the update message every 30 days or half a minute.");
     std::stringstream Ss;
-    Ss << "# This is the BeamMP-Server config file.\n"
-          "# Help & Documentation: `https://docs.beammp.com/server/server-maintenance/`\n"
-          "# IMPORTANT: Fill in the AuthKey with the key you got from `https://keymaster.beammp.com/` on the left under \"Keys\"\n"
+    Ss << "# This is the BeamMP-Offline-Server config file.\n"
+          "# This is a fully OFFLINE build: no account, no key, no internet required.\n"
+          "# Players join by direct-connecting to this server's IP:Port from the in-game menu.\n"
+          "# The AuthKey field is kept for config compatibility but is unused.\n"
        << toml::format(data);
     auto File = std::fopen(mConfigFileName.c_str(), "w+");
     if (!File) {
@@ -288,21 +289,12 @@ void TConfig::ParseFromFile(std::string_view name) {
     if (!mDisableConfig) {
         FlushToFile();
     }
-    // all good so far, let's check if there's a key
-    if (Application::Settings.getAsString(Settings::Key::General_AuthKey).empty()) {
-        if (mDisableConfig) {
-            beammp_error("No AuthKey specified in the environment.");
-        } else {
-            beammp_error("No AuthKey specified in the \"" + std::string(mConfigFileName) + "\" file. Please get an AuthKey, enter it into the config file, and restart this server.");
-        }
-        Application::SetSubsystemStatus("Config", Application::Status::Bad);
-        mFailed = true;
-        return;
-    }
+    // all good so far
+    // === OFFLINE MODE (BeamMP-Offline) ===
+    // Upstream required a valid backend AuthKey to start. The offline edition
+    // performs no backend authentication, so any/empty AuthKey is accepted.
+    // The setting is retained purely for config-file compatibility.
     Application::SetSubsystemStatus("Config", Application::Status::Good);
-    if (Application::Settings.getAsString(Settings::Key::General_AuthKey).size() != 36) {
-        beammp_warn("AuthKey specified is the wrong length and likely isn't valid.");
-    }
 }
 
 void TConfig::PrintDebug() {
