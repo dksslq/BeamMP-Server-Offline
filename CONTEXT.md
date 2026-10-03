@@ -16,6 +16,7 @@ BeamMP 官方服务端（BeamMP/BeamMP-Server）的**纯离线版**分支：
 | 文件 | 离线改动 |
 |---|---|
 | `src/TNetwork.cpp` `TNetwork::Authentication()` | 无 backend 验证；身份包 = 玩家昵称（sanitize ≤32B）；空名 → Guest；≥40 位纯 hex（官方 Launcher 的公钥）→ 命名 `Player-<hex前6位>`（上游客户端兼容）；onPlayerAuth 事件保留 |
+| `src/TNetwork.cpp` 同名玩家处理 | **v1.0.1 起**：上游按"同名同 key=掉线重连"踢旧连接，离线无 key 会误伤同名真人。新语义（按 IP 区分）：同名+同 IP → 踢旧连接（僵尸重连，保留原名）；同名+不同 IP → 不同玩家，新客户端自动改名 `Name (2)/(3)…`（最小空闲 N，避开已有 "Name (2)"）。原始名存于客户端标识 `raw_name`，被改名的玩家重连仍能命中僵尸并取回原名。快照在 `GetClientMutex()` 读锁内收集、锁外决策 |
 | `src/THeartbeatThread.cpp` `operator()` | 心跳线程只本地刷新 `lastCall`（每 5s），零网络请求 |
 | `src/Common.cpp` `Application::CheckForUpdates()` | 空操作 |
 | `src/TConsole.cpp` `Command_NetTest()` | 打印本地状态，不请求 Server Check API |
