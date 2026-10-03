@@ -477,7 +477,45 @@ std::shared_ptr<TClient> TNetwork::Authentication(TConnection&& RawConnection) {
     Client->SetName(PlayerName);
     Client->SetRoles("USER");
     Client->SetIsGuest(IsGuest);
+    // === OFFLINE MODE (BeamMP-Offline) ===
+    // Remember the raw (chosen) name as an identifier: if the display name
+    // gets uniquified below ("Name (2)"), a later reconnect of the same
+    // player is still detected as stale via this raw name.
+    Client->SetIdentifier("raw_name", PlayerName);
     beammp_info("Offline identification: name -> " + Client->GetName() + ", guest -> " + std::to_string(Client->IsGuest()));
+
+    // === OFFLINE MODE (BeamMP-Offline) ===
+    // Upstream kicks an existing client with the same name ("Stale Client
+    // (not a real player)") because name + account-key equality means the
+    // same player is reconnecting and the old connection is a zombie.
+    // Offline mode has no account keys and names are chosen by the players,
+    // so name equality alone cannot tell "same player reconnecting" apart
+    // from "two different players who picked the same nickname". The client
+    // IP is used instead:
+    //   - same name + same IP  -> same player reconnecting: the old
+    //     connection is a stale (zombie) client and is kicked; the new
+    //     client keeps the name.
+    //   - same name + other IP -> two different players: the NEW client's
+    //     name is uniquified by appending " (2)", " (3)", ... (smallest N
+    //     not taken by any existing client; guests become "Guest (2)", ...).
+    // A reconnecting player whose old connection was renamed still matches
+    // through the raw_name identifier, and stale clients kicked here do NOT
+    // count as name owners for the uniquification below.
+    // Snapshot all existing clients under the read lock first, then decide
+    // outside the lock.
+    struct ExistingClientInfo {
+        std::shared_ptr<TClient> Client;
+        std::string Name;    // display name (possibly uniquified)
+        std::string RawName; // raw chosen name (identifier "raw_name")
+        std::string IP;
+        bool IsGuest;
+    };
+    auto GetClientIP = [](const TClient& c) -> std::string {
+        const auto& Ids = c.GetIdentifiers();
+        auto It = Ids.find("ip");
+        return It != Ids.end() ? It->second : std::string {};
+    };
+    std::vector<ExistingClientInfo> ExistingClients;
     mServer.ForEachClient([&](const std::weak_ptr<TClient>& ClientPtr) -> bool {
         std::shared_ptr<TClient> Cl;
         {
@@ -486,14 +524,41 @@ std::shared_ptr<TClient> TNetwork::Authentication(TConnection&& RawConnection) {
                 Cl = std::move(Locked);
             } else
                 return true;
+            const auto& Ids = Cl->GetIdentifiers();
+            auto RawIt = Ids.find("raw_name");
+            ExistingClients.push_back({ Cl,
+                Cl->GetName(),
+                RawIt != Ids.end() ? RawIt->second : std::string {},
+                GetClientIP(*Cl),
+                Cl->IsGuest() });
         }
-        if (Cl->GetName() == Client->GetName() && Cl->IsGuest() == Client->IsGuest()) {
-            DisconnectClient(Cl, "Stale Client (not a real player)");
-            return false;
-        }
-
         return true;
     });
+
+    // same raw name + same guest state + same IP => same player reconnecting:
+    // every such old connection is a stale client; it is kicked and does not
+    // occupy a name. Same name from a different IP => a different player: the
+    // name counts as taken and the new client may get a uniquified name.
+    std::unordered_set<std::string> OccupiedNames;
+    for (const auto& Ex : ExistingClients) {
+        if (Ex.RawName == PlayerName && Ex.IsGuest == IsGuest && Ex.IP == ip) {
+            DisconnectClient(Ex.Client, "Stale Client (not a real player)");
+            continue;
+        }
+        OccupiedNames.insert(Ex.Name);
+    }
+    if (OccupiedNames.find(PlayerName) != OccupiedNames.end()) {
+        std::string NewName;
+        for (int N = 2;; ++N) {
+            NewName = PlayerName + " (" + std::to_string(N) + ")";
+            if (OccupiedNames.find(NewName) == OccupiedNames.end()) {
+                break;
+            }
+        }
+        beammp_info("name -> " + NewName + " (name collision with a different player)");
+        PlayerName = NewName;
+        Client->SetName(PlayerName);
+    }
 
     auto Futures = LuaAPI::MP::Engine->TriggerEvent("onPlayerAuth", "", Client->GetName(), Client->GetRoles(), Client->IsGuest(), Client->GetIdentifiers());
     TLuaEngine::WaitForAll(Futures);
