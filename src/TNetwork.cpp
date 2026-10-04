@@ -426,8 +426,16 @@ std::shared_ptr<TClient> TNetwork::Authentication(TConnection&& RawConnection) {
         // TODO: handle
     }
 
-    Data = TCPRcv(*Client, true);
-    if (Data.empty()) {
+    // === OFFLINE MODE (BeamMP-Offline) ===
+    // A zero-length name packet is LEGAL in offline mode: it means the player
+    // did not choose a name (older offline launchers sent it for guests), and
+    // the player is named "Guest" below. Only treat the packet as lost when
+    // the TCP frame itself could not be received; TCPRcv reports that through
+    // NamePacketValid (an empty payload with a valid header still counts as a
+    // received packet).
+    bool NamePacketValid = false;
+    Data = TCPRcv(*Client, true, &NamePacketValid);
+    if (Data.empty() && !NamePacketValid) {
         beammp_debug("Authentication failed: did not receive auth key packet");
         ClientKick(*Client, "Connection closed during authentication");
         return nullptr;
@@ -667,7 +675,11 @@ bool TNetwork::TCPSend(TClient& c, const std::vector<uint8_t>& Data, bool IsSync
     return true;
 }
 
-std::vector<uint8_t> TNetwork::TCPRcv(TClient& c, bool WithTimeout) {
+std::vector<uint8_t> TNetwork::TCPRcv(TClient& c, bool WithTimeout, bool* OutPacketValid) {
+    if (OutPacketValid) {
+        // pessimistic default: only a fully received packet frame sets this
+        *OutPacketValid = false;
+    }
     if (c.IsDisconnected()) {
         beammp_error("Client disconnected, cancelling TCPRcv");
         return { };
@@ -732,7 +744,11 @@ std::vector<uint8_t> TNetwork::TCPRcv(TClient& c, bool WithTimeout) {
     if (Data.size() >= ABG.size() && std::equal(Data.begin(), Data.begin() + ABG.size(), ABG.begin(), ABG.end())) {
         Data.erase(Data.begin(), Data.begin() + ABG.size());
         try {
-            return DeComp(Data);
+            auto Decompressed = DeComp(Data);
+            if (OutPacketValid) {
+                *OutPacketValid = true;
+            }
+            return Decompressed;
         } catch (const InvalidDataError&) {
             beammp_errorf("Failed to decompress packet from a client. The receive failed and the client may be disconnected as a result");
             // return empty -> error
@@ -743,6 +759,12 @@ std::vector<uint8_t> TNetwork::TCPRcv(TClient& c, bool WithTimeout) {
             return std::vector<uint8_t>();
         }
     } else {
+        // NOTE: a zero-length payload with a valid header is a fully received
+        // (empty) packet - OutPacketValid must stay true so callers can tell
+        // it apart from a closed connection (see Authentication).
+        if (OutPacketValid) {
+            *OutPacketValid = true;
+        }
         return Data;
     }
 }

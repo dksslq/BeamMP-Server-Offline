@@ -35,7 +35,7 @@ public:
     [[nodiscard]] bool SendLarge(TClient& c, std::vector<uint8_t> Data, bool isSync = false);
     [[nodiscard]] bool Respond(TClient& c, const std::vector<uint8_t>& MSG, bool Rel, bool isSync = false);
     std::shared_ptr<TClient> CreateClient(boost::asio::ip::tcp::socket&& TCPSock);
-    std::vector<uint8_t> TCPRcv(TClient& c, bool WithTimeout = false);
+    std::vector<uint8_t> TCPRcv(TClient& c, bool WithTimeout = false, bool* OutPacketValid = nullptr);
     void ClientKick(TClient& c, const std::string& R);
     void DisconnectClient(const std::weak_ptr<TClient>& c, const std::string& R);
     void DisconnectClient(TClient& c, const std::string& R);

@@ -16,6 +16,7 @@ BeamMP 官方服务端（BeamMP/BeamMP-Server）的**纯离线版**分支：
 | 文件 | 离线改动 |
 |---|---|
 | `src/TNetwork.cpp` `TNetwork::Authentication()` | 无 backend 验证；身份包 = 玩家昵称（sanitize ≤32B）；空名 → Guest；≥40 位纯 hex（官方 Launcher 的公钥）→ 命名 `Player-<hex前6位>`（上游客户端兼容）；onPlayerAuth 事件保留 |
+| `src/TNetwork.cpp` `TCPRcv()` + 空名字包 | **v1.0.2 起**：`TCPRcv` 新增第三参数 `bool* OutPacketValid`（成功收完一个包帧置 true，含"合法的 0 长度载荷"；连接关闭/超时/帧错误为 false）。`Authentication` 据此区分"客户端发来合法空名字包（→ Guest）"与"认证阶段连接断开（→ Connection closed during authentication）"。修复背景：旧离线 Launcher 对未命名玩家发送 0 字节名字包，v1.0.1 服务端把它误判为断线并踢出（用户报告的 "Client kicked: Connection closed during authentication"） |
 | `src/TNetwork.cpp` 同名玩家处理 | **v1.0.1 起**：上游按"同名同 key=掉线重连"踢旧连接，离线无 key 会误伤同名真人。新语义（按 IP 区分）：同名+同 IP → 踢旧连接（僵尸重连，保留原名）；同名+不同 IP → 不同玩家，新客户端自动改名 `Name (2)/(3)…`（最小空闲 N，避开已有 "Name (2)"）。原始名存于客户端标识 `raw_name`，被改名的玩家重连仍能命中僵尸并取回原名。快照在 `GetClientMutex()` 读锁内收集、锁外决策 |
 | `src/THeartbeatThread.cpp` `operator()` | 心跳线程只本地刷新 `lastCall`（每 5s），零网络请求 |
 | `src/Common.cpp` `Application::CheckForUpdates()` | 空操作 |
