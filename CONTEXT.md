@@ -61,3 +61,27 @@ git merge upstream/minor      # 上游默认分支是 minor
 - 发布二进制验证：v1.0.2 BeamMP-Server.exe 中 auth/check/backend.beammp.com
   端点字符串完全消失（源码结论的二次确认）；其余 http:// 命中为静态链接库内嵌数据碎片。
 - 供应链提示：release.yml 沿用上游 actions（部分为旧版 tag 引用），建议未来升级并按 SHA pin。
+
+## 12. 已知上游行为：退出时 WSAEINTR 日志 + Windows appcrash（诊断于 2026-10-04，按用户指示不修复）
+
+- **现象**：`exit` 命令优雅关闭走完 9 个子系统后，日志末尾出现
+  `[ERROR] Failed to accept() new client: 一个封锁操作被对 WSACancelBlockingCall 的调用中断。`
+  （= WSAEINTR/10004），且 Windows 每次退出都会生成一条 appcrash（WER 事件）记录。
+- **证据链（全部为上游固有）**：
+  1. accept 循环代码与 fork 基点逐字节相同（`git show f55931d:src/TNetwork.cpp` vs HEAD diff 为空）；
+  2. fork 基点 f55931da739cb... 就是上游默认分支 `minor` 的最新 HEAD（2026-09-23，
+     TNetwork.cpp sha1 51ec1fa1... 两边一致）——即上游至今未修；
+  3. 上游 TNetwork 构造函数注册的关机 handler 显式 `mTCPThread.detach()` / `mUDPThread.detach()`
+     （对应日志 Subsystem 2/9、3/9），并且每个客户端的 Identify 线程也是
+     `ID.detach()` + 上游自己的 `TODO: Add to a queue and attempt to join periodically`。
+- **机制**：优雅关闭结束后 main 返回 → 栈上 TNetwork/TServer(io_context) 析构 →
+  acceptor/io_context 在阻塞的 accept() 下方被拆除 → 阻塞调用以 WSAEINTR 唤醒并打出该 ERROR；
+  随后分离线程与对象析构/静态析构竞争 → 部分退出路径以访问违例收场 → WER 记 appcrash。
+  main() 的 std::exit() 跳过部分 RAII 也参与其中。
+- **影响评估**：无害。appcrash 发生在玩家已踢、配置已写、日志已刷盘之后，属退出尾声的外观性问题；
+  不影响数据完整性与下次启动。
+- **为何不修**（修 = 架构级改造，符合用户"改很多地方就先不修"的豁免条件）：
+  需要线程注册表/收敛 join 语义（替换 3 处 detach）、acceptor 生命周期反转 + 关闭取消、
+  main() 去掉 std::exit 并重排静态析构顺序——横跨 TNetwork/TServer/Common/main 四处。
+- **对用户的话术**：可安全忽略；若在意 WER 记录，可用 Ctrl+C 直接强杀（等价结果），
+  或等待未来 upstream sync 时一并处理。
