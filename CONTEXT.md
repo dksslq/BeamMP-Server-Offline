@@ -49,3 +49,15 @@ git merge upstream/minor      # 上游默认分支是 minor
 
 `.github/workflows/{linux,windows,release}.yml`（上游自带）负责构建。
 打 tag（如 `v1.0.0-offline`）触发 release 上传产物。
+
+## 11. 安全审计记录（2026-10-04，v1.0.2-offline-server = 034d316）
+
+- 全部离线 diff（8 commits/11 files）逐行审计：无后门/遥测/凭据外发。
+- 已移除的外发路径：心跳（每 5-30s POST 服务器信息+AuthKey 到 backend）、版本检查、
+  NetTest 外呼（check.beammp.com）、认证外呼（auth.beammp.com/pkToUser：玩家公钥+AuthKey+玩家IP）。
+  Http:: 在 Http.cpp 之外零调用点，backend URL 常量为死代码；无 socket.io。
+- 保留逻辑：AllowGuests 开关仍强制执行（TNetwork.cpp:606）；AllowGuests=false 时的
+  踢出文案仍提 forum.beammp.com（纯文案残留，无网络行为，可后续润色）。
+- 发布二进制验证：v1.0.2 BeamMP-Server.exe 中 auth/check/backend.beammp.com
+  端点字符串完全消失（源码结论的二次确认）；其余 http:// 命中为静态链接库内嵌数据碎片。
+- 供应链提示：release.yml 沿用上游 actions（部分为旧版 tag 引用），建议未来升级并按 SHA pin。
